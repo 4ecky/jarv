@@ -31,7 +31,7 @@ DM_CHATS = set()
 
 NOTIFIED_MATCHES = set()
 
-# ================= КЕШ =================
+# ================= КЕШ И ПЕРЕВОД НА РУССКИЙ =================
 
 CACHE = {
     "live_goals": {},       # match_id -> set(event_id)
@@ -40,6 +40,22 @@ CACHE = {
     "last_scheduled": 0,
 }
 
+STATUS_RU = {
+    "NS": "Матч скоро начнётся",
+    "1H": "1 тайм",
+    "2H": "2 тайм",
+    "HT": "Перерыв",
+    "FT": "Матч завершён",
+    "ET": "Доп. время",
+    "P": "Пенальти",
+    "LIVE": "Идёт матч",
+}
+
+ROUND_RU = {
+    "Regular Season": "Регулярный сезон",
+    "Playoffs": "Плей-офф",
+    "Group Stage": "Групповой этап",
+}
 # ================= ВСПОМОГАТЕЛЬНОЕ =================
 
 async def send(bot, chat_id, text, reply_markup=None):
@@ -213,60 +229,90 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         LIVE_CHATS.discard(chat_id)
         await update.message.reply_text("📩 DM включён")
 
+
     elif text == "🔴 Сейчас":
+
         LIVE_CHATS.add(chat_id)
 
         matches = fetch_live()
+
         if not matches:
             await update.message.reply_text("⚠️ Сейчас нет LIVE матчей")
+
             return
 
         blocks = []
 
         for m in matches:
-            league = m["league"]
             teams = m["teams"]
-            fixture = m["fixture"]
+
+            goals = m["goals"]
+
+            status = m["fixture"]["status"]
+
+            elapsed = status.get("elapsed")
+
+            status_text = STATUS_RU.get(status["short"], status["short"])
+
+            time_text = f"{elapsed} мин" if elapsed else status_text
 
             blocks.append(
-                f"🏆 {league['name']} ({league['country']})\n"
-                f"🧩 {league.get('round', 'LIVE')}\n"
-                f"⚽ {teams['home']['name']} — {teams['away']['name']}\n"
-                f"⏱ {fixture['status'].get('elapsed', '?')} мин"
+
+                f'{teams["home"]["name"]} — {teams["away"]["name"]}\n'
+
+                f'⚽ {goals["home"]}:{goals["away"]}   ⏱ {time_text}'
+
             )
 
         text_msg = "🔴 LIVE сейчас:\n\n" + "\n\n".join(blocks)
 
-        # 🔥 лимит Telegram
         if len(text_msg) > 4000:
             text_msg = text_msg[:4000] + "\n\n⚠️ Слишком много матчей"
 
         await update.message.reply_text(text_msg)
 
+
+
     elif text == "📅 Ближайшие матчи":
+
         blocks = []
 
         for m in CACHE["scheduled"][:5]:
-            league = m["league"]
-            teams = m["teams"]
+
             fixture = m["fixture"]
 
+            teams = m["teams"]
+
+            league = m["league"]
+
             utc = datetime.fromisoformat(
+
                 fixture["date"].replace("Z", "+00:00")
+
             )
+
             msk = utc.astimezone(timezone(timedelta(hours=3)))
 
+            round_name = league.get("round", "")
+
+            for k, v in ROUND_RU.items():
+                round_name = round_name.replace(k, v)
+
             blocks.append(
-                f"🏆 {league['name']} ({league['country']})\n"
-                f"🧩 {league.get('round', '—')}\n"
-                f"⚽ {teams['home']['name']} {m['goals']['home']} : {m['goals']['away']} {teams['away']['name']}\n"
-                f"🕒 {msk:%d.%m %H:%M}"
+
+                f'{teams["home"]["name"]} — {teams["away"]["name"]}\n'
+
+                f'🏆 {league["name"]}\n'
+
+                f'🕒 {msk:%d.%m %H:%M}'
+
             )
 
         await update.message.reply_text(
-            "📅 Ближайшие матчи:\n\n" + "\n\n".join(blocks)
-        )
 
+            "📅 Ближайшие матчи:\n\n" + "\n\n".join(blocks)
+
+        )
 
 
 async def error_handler(update, context):
