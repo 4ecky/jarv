@@ -243,27 +243,64 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text(msg)
 
+
     elif text == "📅 Ближайшие матчи":
-        if not CACHE["scheduled"]:
-            await update.message.reply_text("⚠️ Нет данных о ближайших матчах")
-            return
+
+        now = datetime.now(timezone.utc)
+
+        today = now.date()
+
+        tomorrow = (now + timedelta(days=1)).date()
 
         blocks = []
-        for m in CACHE["scheduled"][:5]:
-            utc = datetime.fromisoformat(
-                m["fixture"]["date"].replace("Z", "+00:00")
+
+        for m in CACHE["scheduled"]:
+
+            fixture = m.get("fixture", {})
+
+            league = m.get("league", {})
+
+            teams = m.get("teams", {})
+
+            kickoff_utc = datetime.fromisoformat(
+
+                fixture["date"].replace("Z", "+00:00")
+
             )
-            msk = utc.astimezone(timezone(timedelta(hours=3)))
+
+            kickoff_msk = kickoff_utc.astimezone(timezone(timedelta(hours=3)))
+
+            match_date = kickoff_utc.date()
+
+            # ✅ ТОЛЬКО сегодня и завтра
+
+            if match_date not in (today, tomorrow):
+                continue
 
             blocks.append(
-                f'{m["league"]["name"]}\n'
-                f'{m["teams"]["home"]["name"]} — {m["teams"]["away"]["name"]}\n'
-                f"🕒 {msk:%d.%m %H:%M}"
+
+                f"{league.get('name')}\n"
+
+                f"{teams['home']['name']} — {teams['away']['name']}\n"
+
+                f"🕒 {kickoff_msk:%d.%m %H:%M}"
+
             )
 
+            if len(blocks) >= 10:
+                break
+
+        if not blocks:
+            await update.message.reply_text("⚠️ Сегодня и завтра матчей нет")
+
+            return
+
         await update.message.reply_text(
-            "📅 Ближайшие матчи:\n\n" + "\n\n".join(blocks)
+
+            "📅 Матчи сегодня и завтра:\n\n" + "\n\n".join(blocks)
+
         )
+
 
 # ================= ЗАПУСК (WEBHOOK) =================
 
