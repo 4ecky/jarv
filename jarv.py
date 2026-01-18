@@ -12,6 +12,32 @@ from datetime import datetime, timezone, timedelta
 import os
 
 # ================= НАСТРОЙКИ =================
+TRACKED_LEAGUE_IDS = {
+    # Англия
+    39,   # Premier League
+    40,   # Championship
+
+    # Испания
+    140,  # La Liga
+    141,  # Segunda
+
+    # Италия
+    135,  # Serie A
+    136,  # Serie B
+
+    # Германия
+    78,   # Bundesliga
+    79,   # 2. Bundesliga
+
+    # Франция
+    61,   # Ligue 1
+    62,   # Ligue 2
+
+    # Еврокубки
+    2,    # Champions League
+    3,    # Europa League
+    848,  # Conference League
+}
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 API_FOOTBALL_KEY = os.getenv("API_FOOTBALL_KEY")
@@ -73,16 +99,39 @@ def fetch_live_fixtures():
     except Exception:
         return []
 
+def fetch_live():
+    try:
+        r = requests.get(
+            f"{API_URL}/fixtures",
+            headers=HEADERS,
+            params={"live": "all"},
+            timeout=5,
+        )
+        data = r.json().get("response", [])
+        return [
+            m for m in data
+            if m["league"]["id"] in TRACKED_LEAGUE_IDS
+        ]
+    except Exception as e:
+        print("LIVE API ERROR:", e)
+        return []
+
+
 def fetch_scheduled():
     try:
         r = requests.get(
             f"{API_URL}/fixtures",
             headers=HEADERS,
-            params={"next": 20},
-            timeout=10,
+            params={"live": "all"},
+            timeout=5,
         )
-        return r.json().get("response", [])
-    except Exception:
+        data = r.json().get("response", [])
+        return [
+            m for m in data
+            if m["league"]["id"] in TRACKED_LEAGUE_IDS
+        ]
+    except Exception as e:
+        print("LIVE API ERROR:", e)
         return []
 
 # ================= КЛАВИАТУРА =================
