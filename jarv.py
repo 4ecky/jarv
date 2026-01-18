@@ -82,13 +82,18 @@ def fetch_live():
         r = requests.get(
             f"{API_URL}/fixtures",
             headers=HEADERS,
-            params={"live": "all"},
+            params={"status": "1H,HT,2H,ET,P"},
             timeout=5,
         )
-        return r.json().get("response", [])
+        data = r.json().get("response", [])
+
+        # 🔒 дополнительная защита
+        return [m for m in data if m.get("fixture", {}).get("status", {}).get("elapsed")]
+
     except Exception as e:
         print("LIVE API ERROR:", e)
         return []
+
 
 def fetch_scheduled():
     try:
@@ -253,46 +258,29 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not matches:
             await update.message.reply_text("⚠️ Сейчас нет LIVE матчей")
-
             return
 
         blocks = []
-
         for m in matches:
             league = m["league"]
-
             teams = m["teams"]
-
             goals = m["goals"]
-
             fixture = m["fixture"]
-
             status = fixture["status"]
-
             league_name = (
-
                 f'{league["country"]} — {league["name"]}'
-
                 if league.get("country")
-
                 else league["name"]
-
             )
 
             elapsed = status.get("elapsed")
-
             status_ru = STATUS_RU.get(status.get("short"), "Идёт матч")
-
             time_text = f"{elapsed} мин" if elapsed else status_ru
 
             blocks.append(
-
                 f"🏆 {league_name}\n"
-
                 f'{teams["home"]["name"]} — {teams["away"]["name"]}\n'
-
                 f'⚽ {goals["home"]}:{goals["away"]}   ⏱ {time_text}'
-
             )
 
         text_msg = "🔴 LIVE сейчас:\n\n" + "\n\n".join(blocks)
