@@ -222,40 +222,34 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         blocks = []
-        seen = set()  # чтобы не дублировать лиги
 
         for m in matches:
             league = m["league"]
-
-            key = (league["id"], league.get("round"))
-            if key in seen:
-                continue
-            seen.add(key)
+            teams = m["teams"]
+            fixture = m["fixture"]
 
             blocks.append(
                 f"🏆 {league['name']} ({league['country']})\n"
-                f"🧩 {league.get('round', 'LIVE')}"
+                f"🧩 {league.get('round', 'LIVE')}\n"
+                f"⚽ {teams['home']['name']} — {teams['away']['name']}\n"
+                f"⏱ {fixture['status'].get('elapsed', '?')} мин"
             )
 
-        text_msg = "🔴 LIVE лиги сейчас:\n\n" + "\n\n".join(blocks)
+        text_msg = "🔴 LIVE сейчас:\n\n" + "\n\n".join(blocks)
 
+        # 🔥 лимит Telegram
         if len(text_msg) > 4000:
-            text_msg = text_msg[:4000] + "\n\n⚠️ Слишком много лиг"
+            text_msg = text_msg[:4000] + "\n\n⚠️ Слишком много матчей"
 
         await update.message.reply_text(text_msg)
 
     elif text == "📅 Ближайшие матчи":
         blocks = []
-        seen = set()
 
-        for m in CACHE["scheduled"]:
+        for m in CACHE["scheduled"][:5]:
             league = m["league"]
+            teams = m["teams"]
             fixture = m["fixture"]
-
-            key = (league["id"], league.get("round"))
-            if key in seen:
-                continue
-            seen.add(key)
 
             utc = datetime.fromisoformat(
                 fixture["date"].replace("Z", "+00:00")
@@ -265,15 +259,14 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             blocks.append(
                 f"🏆 {league['name']} ({league['country']})\n"
                 f"🧩 {league.get('round', '—')}\n"
+                f"⚽ {teams['home']['name']} {m['goals']['home']} : {m['goals']['away']} {teams['away']['name']}\n"
                 f"🕒 {msk:%d.%m %H:%M}"
             )
 
-            if len(blocks) >= 5:
-                break
-
         await update.message.reply_text(
-            "📅 Ближайшие лиги:\n\n" + "\n\n".join(blocks)
+            "📅 Ближайшие матчи:\n\n" + "\n\n".join(blocks)
         )
+
 
 
 async def error_handler(update, context):
