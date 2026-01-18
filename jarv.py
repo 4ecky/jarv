@@ -302,10 +302,10 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text(text_msg)
 
-elif text == "📅 Ближайшие матчи":
-    if not CACHE["scheduled"]:
-        await update.message.reply_text("⚠️ Нет данных о ближайших матчах")
-        return
+    elif text == "📅 Ближайшие матчи":
+        if not CACHE["scheduled"]:
+         await update.message.reply_text("⚠️ Нет данных о ближайших матчах")
+         return
 
     blocks = []
 
