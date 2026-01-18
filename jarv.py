@@ -222,9 +222,9 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         blocks = [
-            f"{m['homeTeam']['name']} — {m['awayTeam']['name']}\n"
-            f"{m['score']['fullTime']['home']}:{m['score']['fullTime']['away']} "
-            f"⏱ {m.get('minute', '?')} мин"
+            f"{m['teams']['home']['name']} — {m['teams']['away']['name']}\n"
+            f"{m['goals']['home']}:{m['goals']['away']} "
+            f"⏱ {m['fixture']['status'].get('elapsed', '?')} мин"
             for m in matches
         ]
 
