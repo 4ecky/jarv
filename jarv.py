@@ -12,17 +12,6 @@ from datetime import datetime, timezone, timedelta
 import os
 
 # ================= НАСТРОЙКИ =================
-STATUS_RU = {
-    "1H": "1-й тайм",
-    "2H": "2-й тайм",
-    "HT": "Перерыв",
-    "FT": "Матч окончен",
-    "ET": "Доп. время",
-    "P": "Пенальти",
-    "SUSP": "Приостановлен",
-    "INT": "Перерыв",
-    "LIVE": "Идёт матч",
-}
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 API_FOOTBALL_KEY = os.getenv("API_FOOTBALL_KEY")
@@ -40,36 +29,18 @@ STARTED_CHATS = set()
 LIVE_CHATS = set()
 DM_CHATS = set()
 
-NOTIFIED_MATCHES = set()
-
-# ================= КЕШ И ПЕРЕВОД НА РУССКИЙ =================
+# ================= КЕШ =================
 
 CACHE = {
-    "live_goals": {},       # match_id -> set(event_id)
+    "sent_goals": set(),      # уникальные goal_id
     "scheduled": [],
-    "last_live": 0,
+    "last_events": 0,
     "last_scheduled": 0,
 }
 
-STATUS_RU = {
-    "NS": "Матч скоро начнётся",
-    "1H": "1 тайм",
-    "2H": "2 тайм",
-    "HT": "Перерыв",
-    "FT": "Матч завершён",
-    "ET": "Доп. время",
-    "P": "Пенальти",
-    "LIVE": "Идёт матч",
-}
-
-ROUND_RU = {
-    "Regular Season": "Регулярный сезон",
-    "Playoffs": "Плей-офф",
-    "Group Stage": "Групповой этап",
-}
 # ================= ВСПОМОГАТЕЛЬНОЕ =================
 
-async def send(bot, chat_id, text, reply_markup=None):
+async def safe_send(bot, chat_id, text, reply_markup=None):
     try:
         await bot.send_message(chat_id, text, reply_markup=reply_markup)
     except Exception:
@@ -77,32 +48,29 @@ async def send(bot, chat_id, text, reply_markup=None):
 
 # ================= API =================
 
-def fetch_live():
+def fetch_live_events():
     try:
-        today = datetime.utcnow().strftime("%Y-%m-%d")
+        r = requests.get(
+            f"{API_URL}/fixtures/events",
+            headers=HEADERS,
+            params={"live": "all"},
+            timeout=5,
+        )
+        return r.json().get("response", [])
+    except Exception as e:
+        print("LIVE EVENTS ERROR:", e)
+        return []
 
+def fetch_live_fixtures():
+    try:
         r = requests.get(
             f"{API_URL}/fixtures",
             headers=HEADERS,
-            params={"date": today},
+            params={"live": "all"},
             timeout=5,
         )
-
-        data = r.json().get("response", [])
-        live_matches = []
-
-        for m in data:
-            events = m.get("events", [])
-            for e in events:
-                if e.get("type") == "Goal":
-                    live_matches.append(m)
-                    break
-
-        print(f"✅ LIVE FOUND (by goals): {len(live_matches)}")
-        return live_matches
-
-    except Exception as e:
-        print("LIVE API ERROR:", e)
+        return r.json().get("response", [])
+    except Exception:
         return []
 
 def fetch_scheduled():
@@ -114,69 +82,61 @@ def fetch_scheduled():
             timeout=10,
         )
         return r.json().get("response", [])
-    except Exception as e:
-        print("SCHEDULED API ERROR:", e)
+    except Exception:
         return []
 
 # ================= КЛАВИАТУРА =================
 
-def main_menu(chat_id):
-    keyboard = [
-        ["📩 DM"],
-        ["🔴 Сейчас"],
-        ["📅 Ближайшие матчи"],
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+def main_menu():
+    return ReplyKeyboardMarkup(
+        [
+            ["📩 DM"],
+            ["🔴 Сейчас"],
+            ["📅 Ближайшие матчи"],
+        ],
+        resize_keyboard=True,
+    )
 
-# ================= ГОЛЫ (100% ГАРАНТИЯ) =================
+# ================= ГОЛЫ =================
 
-async def process_goals(context, live_matches):
-    active_ids = set()
+async def process_goals(context):
+    events = fetch_live_events()
+    print(f"✅ LIVE EVENTS FOUND: {len(events)}")
 
-    for m in live_matches:
-        fixture = m["fixture"]
-        teams = m["teams"]
-        goals = m["goals"]
-        events = m["events"]
+    for e in events:
+        if e.get("type") != "Goal":
+            continue
 
-        match_id = fixture["id"]
-        active_ids.add(match_id)
+        fixture = e.get("fixture", {})
+        league = e.get("league", {})
+        teams = e.get("teams", {})
+        goals = e.get("goals", {})
+        time_info = e.get("time", {})
 
-        CACHE["live_goals"].setdefault(match_id, set())
+        match_id = fixture.get("id")
+        minute = time_info.get("elapsed")
 
-        for e in events:
-            if e["type"] != "Goal":
-                continue
+        goal_id = f"{match_id}_{minute}_{e.get('player', {}).get('id')}"
 
-            event_id = f'{match_id}_{e["time"]["elapsed"]}_{e["player"]["id"]}'
+        if goal_id in CACHE["sent_goals"]:
+            continue
 
-            if event_id in CACHE["live_goals"][match_id]:
-                continue
+        CACHE["sent_goals"].add(goal_id)
 
-            CACHE["live_goals"][match_id].add(event_id)
+        text = (
+            "⚽ ГОООООЛ!\n"
+            f"{league.get('name', 'Лига')}\n"
+            f"{teams.get('home', {}).get('name')} — {teams.get('away', {}).get('name')}\n"
+            f"Счёт: {goals.get('home')} : {goals.get('away')}\n"
+            f"⏱ {minute} мин"
+        )
 
-            minute = e["time"]["elapsed"]
-            league = m["league"]
-            league_name = f'{league["country"]} — {league["name"]}' if league.get("country") else league["name"]
-            text = (
-                "⚽ ГОООООЛ!\n"
-                f"🏆 {league_name}\n"
-                f'{teams["home"]["name"]} — {teams["away"]["name"]}\n'
-                f'Счёт: {goals["home"]} : {goals["away"]}\n'
-                f"⏱ {minute} мин"
-            )
+        for chat_id in LIVE_CHATS:
+            await safe_send(context.bot, chat_id, text)
 
-            for chat_id in LIVE_CHATS:
-                await send(context.bot, chat_id, text)
-
-            if 2 <= minute <= 11 or 69 <= minute <= 72:
-                for chat_id in DM_CHATS:
-                    await send(context.bot, chat_id, text)
-
-    # 🧹 очистка завершённых матчей
-    finished = set(CACHE["live_goals"]) - active_ids
-    for mid in finished:
-        del CACHE["live_goals"][mid]
+        if minute and (2 <= minute <= 11 or 69 <= minute <= 72):
+            for chat_id in DM_CHATS:
+                await safe_send(context.bot, chat_id, text)
 
 # ================= НАПОМИНАНИЯ =================
 
@@ -184,8 +144,9 @@ async def process_upcoming(context):
     now = datetime.now(timezone.utc)
 
     for m in CACHE["scheduled"]:
-        fixture = m["fixture"]
-        teams = m["teams"]
+        fixture = m.get("fixture", {})
+        teams = m.get("teams", {})
+        league = m.get("league", {})
 
         kickoff = datetime.fromisoformat(
             fixture["date"].replace("Z", "+00:00")
@@ -193,35 +154,24 @@ async def process_upcoming(context):
 
         diff = (kickoff - now).total_seconds()
 
-        if 9 * 60 <= diff <= 11 * 60 and fixture["id"] not in NOTIFIED_MATCHES:
-            NOTIFIED_MATCHES.add(fixture["id"])
-
+        if 9 * 60 <= diff <= 11 * 60:
             text = (
                 "⏰ Матч начнётся через 10 минут:\n"
-                f'{teams["home"]["name"]} — {teams["away"]["name"]}'
+                f"{league.get('name')}\n"
+                f"{teams['home']['name']} — {teams['away']['name']}"
             )
 
             for chat_id in STARTED_CHATS:
-                if chat_id in DM_CHATS:
-                    continue  # ❌ DM не получает напоминания
-
-                await send(
-                    context.bot,
-                    chat_id,
-                    text,
-                    main_menu(chat_id),
-                )
-
+                await safe_send(context.bot, chat_id, text, main_menu())
 
 # ================= JOB =================
 
 async def main_job(context: ContextTypes.DEFAULT_TYPE):
     now = time.time()
 
-    if now - CACHE["last_live"] >= 20:
-        live = fetch_live()
-        await process_goals(context, live)
-        CACHE["last_live"] = now
+    if now - CACHE["last_events"] >= 20:
+        await process_goals(context)
+        CACHE["last_events"] = now
 
     if now - CACHE["last_scheduled"] >= 600:
         CACHE["scheduled"] = fetch_scheduled()
@@ -235,11 +185,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     STARTED_CHATS.add(chat_id)
 
-    await send(
+    await safe_send(
         context.bot,
         chat_id,
         "👋 Бот запущен",
-        main_menu(chat_id),
+        main_menu(),
     )
 
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -254,7 +204,6 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ✅ ОБЯЗАТЕЛЬНАЯ защита
     if not update.message or not update.message.text:
         return
 
@@ -266,86 +215,56 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         LIVE_CHATS.discard(chat_id)
         await update.message.reply_text("📩 DM включён")
 
-
-
-
     elif text == "🔴 Сейчас":
-
         LIVE_CHATS.add(chat_id)
+        fixtures = fetch_live_fixtures()
 
-        matches = fetch_live()
-
-        if not matches:
+        if not fixtures:
             await update.message.reply_text("⚠️ Сейчас нет LIVE матчей")
             return
 
         blocks = []
-        for m in matches:
-            league = m["league"]
-            teams = m["teams"]
+        for m in fixtures:
+            league = m["league"]["name"]
+            home = m["teams"]["home"]["name"]
+            away = m["teams"]["away"]["name"]
             goals = m["goals"]
-            fixture = m["fixture"]
-            status = fixture["status"]
-            league_name = (
-                f'{league["country"]} — {league["name"]}'
-                if league.get("country")
-                else league["name"]
-            )
-
-            elapsed = status.get("elapsed")
-            status_ru = STATUS_RU.get(status.get("short"), "Идёт матч")
-            time_text = f"{elapsed} мин" if elapsed else status_ru
+            minute = m["fixture"]["status"].get("elapsed", "?")
 
             blocks.append(
-                f"🏆 {league_name}\n"
-                f'{teams["home"]["name"]} — {teams["away"]["name"]}\n'
-                f'⚽ {goals["home"]}:{goals["away"]}   ⏱ {time_text}'
+                f"{league}\n{home} — {away}\n"
+                f"{goals['home']}:{goals['away']} ⏱ {minute} мин"
             )
 
-        text_msg = "🔴 LIVE сейчас:\n\n" + "\n\n".join(blocks)
+        msg = "🔴 LIVE сейчас:\n\n" + "\n\n".join(blocks)
 
-        if len(text_msg) > 4000:
-            text_msg = text_msg[:4000] + "\n\n⚠️ Слишком много матчей"
+        if len(msg) > 4000:
+            msg = msg[:4000] + "\n\n⚠️ Слишком много матчей"
 
-        await update.message.reply_text(text_msg)
+        await update.message.reply_text(msg)
 
     elif text == "📅 Ближайшие матчи":
         if not CACHE["scheduled"]:
-         await update.message.reply_text("⚠️ Нет данных о ближайших матчах")
-         return
+            await update.message.reply_text("⚠️ Нет данных о ближайших матчах")
+            return
 
-    blocks = []
+        blocks = []
+        for m in CACHE["scheduled"][:5]:
+            utc = datetime.fromisoformat(
+                m["fixture"]["date"].replace("Z", "+00:00")
+            )
+            msk = utc.astimezone(timezone(timedelta(hours=3)))
 
-    for m in CACHE["scheduled"][:5]:
-        fixture = m["fixture"]
-        teams = m["teams"]
-        league = m["league"]
+            blocks.append(
+                f'{m["league"]["name"]}\n'
+                f'{m["teams"]["home"]["name"]} — {m["teams"]["away"]["name"]}\n'
+                f"🕒 {msk:%d.%m %H:%M}"
+            )
 
-        utc = datetime.fromisoformat(
-            fixture["date"].replace("Z", "+00:00")
-        )
-        msk = utc.astimezone(timezone(timedelta(hours=3)))
-
-        league_name = (
-            f'{league["country"]} — {league["name"]}'
-            if league.get("country")
-            else league["name"]
-        )
-
-        blocks.append(
-            f"🏆 {league_name}\n"
-            f'{teams["home"]["name"]} — {teams["away"]["name"]}\n'
-            f"🕒 {msk:%d.%m %H:%M}"
+        await update.message.reply_text(
+            "📅 Ближайшие матчи:\n\n" + "\n\n".join(blocks)
         )
 
-    await update.message.reply_text(
-        "📅 Ближайшие матчи:\n\n" + "\n\n".join(blocks)
-    )
-
-
-
-async def error_handler(update, context):
-    print("❌ BOT ERROR:", context.error)
 # ================= ЗАПУСК (WEBHOOK) =================
 
 def main():
@@ -355,7 +274,6 @@ def main():
     app.add_handler(CommandHandler("stop", stop))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))
 
-    app.add_error_handler(error_handler)
     app.job_queue.run_repeating(main_job, interval=20, first=5)
 
     print("✅ Бот запущен (WEBHOOK)")
