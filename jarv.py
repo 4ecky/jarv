@@ -89,25 +89,21 @@ def fetch_live():
         )
 
         data = r.json().get("response", [])
-
         live_matches = []
 
         for m in data:
-            status = m["fixture"]["status"]["short"]
-            elapsed = m["fixture"]["status"].get("elapsed")
+            events = m.get("events", [])
+            for e in events:
+                if e.get("type") == "Goal":
+                    live_matches.append(m)
+                    break
 
-            if status in ("1H", "HT", "2H", "ET", "P") and elapsed:
-                live_matches.append(m)
-
-        print(f"✅ LIVE FOUND: {len(live_matches)}")
-
+        print(f"✅ LIVE FOUND (by goals): {len(live_matches)}")
         return live_matches
 
     except Exception as e:
         print("LIVE API ERROR:", e)
         return []
-
-
 
 def fetch_scheduled():
     try:
@@ -206,7 +202,16 @@ async def process_upcoming(context):
             )
 
             for chat_id in STARTED_CHATS:
-                await send(context.bot, chat_id, text, main_menu(chat_id))
+                if chat_id in DM_CHATS:
+                    continue  # ❌ DM не получает напоминания
+
+                await send(
+                    context.bot,
+                    chat_id,
+                    text,
+                    main_menu(chat_id),
+                )
+
 
 # ================= JOB =================
 
