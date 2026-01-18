@@ -130,11 +130,13 @@ async def process_goals(context, live_matches):
             CACHE["live_goals"][match_id].add(event_id)
 
             minute = e["time"]["elapsed"]
-
+            league = m["league"]
+            league_name = f'{league["country"]} — {league["name"]}' if league.get("country") else league["name"]
             text = (
-                "⚽ ГООООЛ!\n"
-                f"🏆 {m['league']['name']} ({m['league']['country']})\n"
-                f"🧩 {m['league'].get('round', '')}\n"
+                "⚽ ГОООООЛ!\n"
+                f"🏆 {league_name}\n"
+                f'{teams["home"]["name"]} — {teams["away"]["name"]}\n'
+                f'Счёт: {goals["home"]} : {goals["away"]}\n'
                 f"⏱ {minute} мин"
             )
 
@@ -230,6 +232,7 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("📩 DM включён")
 
 
+
     elif text == "🔴 Сейчас":
 
         LIVE_CHATS.add(chat_id)
@@ -244,11 +247,23 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         blocks = []
 
         for m in matches:
+            league = m["league"]
+
             teams = m["teams"]
 
             goals = m["goals"]
 
             status = m["fixture"]["status"]
+
+            league_name = (
+
+                f'{league["country"]} — {league["name"]}'
+
+                if league.get("country")
+
+                else league["name"]
+
+            )
 
             elapsed = status.get("elapsed")
 
@@ -257,6 +272,8 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             time_text = f"{elapsed} мин" if elapsed else status_text
 
             blocks.append(
+
+                f"🏆 {league_name}\n"
 
                 f'{teams["home"]["name"]} — {teams["away"]["name"]}\n'
 
@@ -270,6 +287,7 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text_msg = text_msg[:4000] + "\n\n⚠️ Слишком много матчей"
 
         await update.message.reply_text(text_msg)
+
 
 
 
