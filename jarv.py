@@ -12,6 +12,17 @@ from datetime import datetime, timezone, timedelta
 import os
 
 # ================= НАСТРОЙКИ =================
+STATUS_RU = {
+    "1H": "1-й тайм",
+    "2H": "2-й тайм",
+    "HT": "Перерыв",
+    "FT": "Матч окончен",
+    "ET": "Доп. время",
+    "P": "Пенальти",
+    "SUSP": "Приостановлен",
+    "INT": "Перерыв",
+    "LIVE": "Идёт матч",
+}
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 API_FOOTBALL_KEY = os.getenv("API_FOOTBALL_KEY")
@@ -233,6 +244,7 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
+
     elif text == "🔴 Сейчас":
 
         LIVE_CHATS.add(chat_id)
@@ -253,7 +265,9 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             goals = m["goals"]
 
-            status = m["fixture"]["status"]
+            fixture = m["fixture"]
+
+            status = fixture["status"]
 
             league_name = (
 
@@ -267,9 +281,9 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             elapsed = status.get("elapsed")
 
-            status_text = STATUS_RU.get(status["short"], status["short"])
+            status_ru = STATUS_RU.get(status.get("short"), "Идёт матч")
 
-            time_text = f"{elapsed} мин" if elapsed else status_text
+            time_text = f"{elapsed} мин" if elapsed else status_ru
 
             blocks.append(
 
@@ -288,49 +302,39 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text(text_msg)
 
+elif text == "📅 Ближайшие матчи":
+    if not CACHE["scheduled"]:
+        await update.message.reply_text("⚠️ Нет данных о ближайших матчах")
+        return
 
+    blocks = []
 
+    for m in CACHE["scheduled"][:5]:
+        fixture = m["fixture"]
+        teams = m["teams"]
+        league = m["league"]
 
-    elif text == "📅 Ближайшие матчи":
-
-        blocks = []
-
-        for m in CACHE["scheduled"][:5]:
-
-            fixture = m["fixture"]
-
-            teams = m["teams"]
-
-            league = m["league"]
-
-            utc = datetime.fromisoformat(
-
-                fixture["date"].replace("Z", "+00:00")
-
-            )
-
-            msk = utc.astimezone(timezone(timedelta(hours=3)))
-
-            round_name = league.get("round", "")
-
-            for k, v in ROUND_RU.items():
-                round_name = round_name.replace(k, v)
-
-            blocks.append(
-
-                f'{teams["home"]["name"]} — {teams["away"]["name"]}\n'
-
-                f'🏆 {league["name"]}\n'
-
-                f'🕒 {msk:%d.%m %H:%M}'
-
-            )
-
-        await update.message.reply_text(
-
-            "📅 Ближайшие матчи:\n\n" + "\n\n".join(blocks)
-
+        utc = datetime.fromisoformat(
+            fixture["date"].replace("Z", "+00:00")
         )
+        msk = utc.astimezone(timezone(timedelta(hours=3)))
+
+        league_name = (
+            f'{league["country"]} — {league["name"]}'
+            if league.get("country")
+            else league["name"]
+        )
+
+        blocks.append(
+            f"🏆 {league_name}\n"
+            f'{teams["home"]["name"]} — {teams["away"]["name"]}\n'
+            f"🕒 {msk:%d.%m %H:%M}"
+        )
+
+    await update.message.reply_text(
+        "📅 Ближайшие матчи:\n\n" + "\n\n".join(blocks)
+    )
+
 
 
 async def error_handler(update, context):
