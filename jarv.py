@@ -200,6 +200,10 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # ✅ ОБЯЗАТЕЛЬНАЯ защита
+    if not update.message or not update.message.text:
+        return
+
     chat_id = update.effective_chat.id
     text = update.message.text
 
@@ -210,30 +214,37 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif text == "🔴 Сейчас":
         LIVE_CHATS.add(chat_id)
+
         matches = fetch_live()
 
         if not matches:
-            await update.message.reply_text("⚠️ Нет LIVE матчей")
+            await update.message.reply_text("⚠️ Сейчас нет LIVE матчей")
             return
 
-        blocks = []
-        for m in matches:
-            blocks.append(
-                f'{m["teams"]["home"]["name"]} — {m["teams"]["away"]["name"]}\n'
-                f'{m["goals"]["home"]}:{m["goals"]["away"]}'
-            )
+        blocks = [
+            f"{m['homeTeam']['name']} — {m['awayTeam']['name']}\n"
+            f"{m['score']['fullTime']['home']}:{m['score']['fullTime']['away']} "
+            f"⏱ {m.get('minute', '?')} мин"
+            for m in matches
+        ]
 
-        await update.message.reply_text(
-            "🔴 LIVE сейчас:\n\n" + "\n\n".join(blocks)
-        )
+        text_msg = "🔴 LIVE сейчас:\n\n" + "\n\n".join(blocks)
+
+        # 🔥 ФИКС лимита Telegram (4096)
+        if len(text_msg) > 4000:
+            text_msg = text_msg[:4000] + "\n\n⚠️ Слишком много матчей"
+
+        await update.message.reply_text(text_msg)
 
     elif text == "📅 Ближайшие матчи":
         blocks = []
+
         for m in CACHE["scheduled"][:5]:
             utc = datetime.fromisoformat(
                 m["fixture"]["date"].replace("Z", "+00:00")
             )
             msk = utc.astimezone(timezone(timedelta(hours=3)))
+
             blocks.append(
                 f'{m["teams"]["home"]["name"]} — {m["teams"]["away"]["name"]}\n'
                 f"🕒 {msk:%d.%m %H:%M}"
@@ -243,6 +254,9 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📅 Ближайшие матчи:\n\n" + "\n\n".join(blocks)
         )
 
+
+async def error_handler(update, context):
+    print("❌ BOT ERROR:", context.error)
 # ================= ЗАПУСК (WEBHOOK) =================
 
 def main():
@@ -252,6 +266,7 @@ def main():
     app.add_handler(CommandHandler("stop", stop))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))
 
+    app.add_error_handler(error_handler)
     app.job_queue.run_repeating(main_job, interval=20, first=5)
 
     print("✅ Бот запущен (WEBHOOK)")
