@@ -79,20 +79,34 @@ async def send(bot, chat_id, text, reply_markup=None):
 
 def fetch_live():
     try:
+        today = datetime.utcnow().strftime("%Y-%m-%d")
+
         r = requests.get(
             f"{API_URL}/fixtures",
             headers=HEADERS,
-            params={"status": "1H,HT,2H,ET,P"},
+            params={"date": today},
             timeout=5,
         )
+
         data = r.json().get("response", [])
 
-        # 🔒 дополнительная защита
-        return [m for m in data if m.get("fixture", {}).get("status", {}).get("elapsed")]
+        live_matches = []
+
+        for m in data:
+            status = m["fixture"]["status"]["short"]
+            elapsed = m["fixture"]["status"].get("elapsed")
+
+            if status in ("1H", "HT", "2H", "ET", "P") and elapsed:
+                live_matches.append(m)
+
+        print(f"✅ LIVE FOUND: {len(live_matches)}")
+
+        return live_matches
 
     except Exception as e:
         print("LIVE API ERROR:", e)
         return []
+
 
 
 def fetch_scheduled():
