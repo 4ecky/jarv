@@ -117,7 +117,8 @@ async def process_goals(context, live_matches):
 
             text = (
                 "⚽ ГООООЛ!\n"
-                f'{teams["home"]["name"]} {goals["home"]} : {goals["away"]} {teams["away"]["name"]}\n'
+                f"🏆 {m['league']['name']} ({m['league']['country']})\n"
+                f"🧩 {m['league'].get('round', '')}\n"
                 f"⏱ {minute} мин"
             )
 
@@ -216,42 +217,62 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         LIVE_CHATS.add(chat_id)
 
         matches = fetch_live()
-
         if not matches:
             await update.message.reply_text("⚠️ Сейчас нет LIVE матчей")
             return
 
-        blocks = [
-            f"{m['teams']['home']['name']} — {m['teams']['away']['name']}\n"
-            f"{m['goals']['home']}:{m['goals']['away']} "
-            f"⏱ {m['fixture']['status'].get('elapsed', '?')} мин"
-            for m in matches
-        ]
+        blocks = []
+        seen = set()  # чтобы не дублировать лиги
 
-        text_msg = "🔴 LIVE сейчас:\n\n" + "\n\n".join(blocks)
+        for m in matches:
+            league = m["league"]
 
-        # 🔥 ФИКС лимита Telegram (4096)
+            key = (league["id"], league.get("round"))
+            if key in seen:
+                continue
+            seen.add(key)
+
+            blocks.append(
+                f"🏆 {league['name']} ({league['country']})\n"
+                f"🧩 {league.get('round', 'LIVE')}"
+            )
+
+        text_msg = "🔴 LIVE лиги сейчас:\n\n" + "\n\n".join(blocks)
+
         if len(text_msg) > 4000:
-            text_msg = text_msg[:4000] + "\n\n⚠️ Слишком много матчей"
+            text_msg = text_msg[:4000] + "\n\n⚠️ Слишком много лиг"
 
         await update.message.reply_text(text_msg)
 
     elif text == "📅 Ближайшие матчи":
         blocks = []
+        seen = set()
 
-        for m in CACHE["scheduled"][:5]:
+        for m in CACHE["scheduled"]:
+            league = m["league"]
+            fixture = m["fixture"]
+
+            key = (league["id"], league.get("round"))
+            if key in seen:
+                continue
+            seen.add(key)
+
             utc = datetime.fromisoformat(
-                m["fixture"]["date"].replace("Z", "+00:00")
+                fixture["date"].replace("Z", "+00:00")
             )
             msk = utc.astimezone(timezone(timedelta(hours=3)))
 
             blocks.append(
-                f'{m["teams"]["home"]["name"]} — {m["teams"]["away"]["name"]}\n'
+                f"🏆 {league['name']} ({league['country']})\n"
+                f"🧩 {league.get('round', '—')}\n"
                 f"🕒 {msk:%d.%m %H:%M}"
             )
 
+            if len(blocks) >= 5:
+                break
+
         await update.message.reply_text(
-            "📅 Ближайшие матчи:\n\n" + "\n\n".join(blocks)
+            "📅 Ближайшие лиги:\n\n" + "\n\n".join(blocks)
         )
 
 
